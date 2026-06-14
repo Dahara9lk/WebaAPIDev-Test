@@ -1,0 +1,24 @@
+{
+  "name": "webaapidev-test",
+  "version": "1.0.0",
+  "description": "COBSCCOMP251P-084",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Dahara9lk/WebaAPIDev-Test.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Dahara9lk/WebaAPIDev-Test/issues"
+  },
+  "homepage": "https://github.com/Dahara9lk/WebaAPIDev-Test#readme",
+  "dependencies": {
+    "express": "^5.2.1"
+  }
+}
