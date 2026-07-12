@@ -1,24 +1,18 @@
 {
-  "name": "webaapidev-test",
+  "name": "taxico-api",
   "version": "1.0.0",
-  "description": "COBSCCOMP251P-084",
-  "main": "index.js",
+  "description": "TaxiCo Vehicle Tracking REST API",
+  "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js",
+    "dev": "nodemon server.js"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Dahara9lk/WebaAPIDev-Test.git"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
-  "bugs": {
-    "url": "https://github.com/Dahara9lk/WebaAPIDev-Test/issues"
-  },
-  "homepage": "https://github.com/Dahara9lk/WebaAPIDev-Test#readme",
   "dependencies": {
-    "express": "^5.2.1"
+    "cors": "^2.8.5",
+    "dotenv": "^17.4.2",
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
   }
 }
