@@ -26,9 +26,10 @@ The following assumptions were made during the design phase. Any deviation from 
 
 8. **In-memory data store.** All data is loaded from `seed.json` at startup and held in JavaScript arrays. Changes are ephemeral — the server resets to seed state on restart.
 9. **Express 5.x** as the HTTP framework (already present in `package.json`).
-10. **API key authentication.** Every request (except the root `/` and `/api` discovery endpoint) requires an `X-API-Key` header. A default key `taxico-default-key-2026` is seeded on first load.
-11. **JSON only.** Both request bodies and response payloads use `application/json`. No XML, form-encoded, or multipart support.
-12. **Integer IDs.** All resources use auto-incrementing integer primary keys.
+10. **JWT authentication.** Every request under `/api/*` (except `/api/auth/login`) requires a valid JWT access token sent via the `Authorization: Bearer <token>` header. Login credentials (username + password) are exchanged for a JWT at `/api/auth/login`.
+11. **Role-based authorization.** Three roles control access: `admin` (full access), `dispatcher` (trip management + view), `driver` (send pings, view own data).
+12. **JSON only.** Both request bodies and response payloads use `application/json`. No XML, form-encoded, or multipart support.
+13. **Integer IDs.** All resources use auto-incrementing integer primary keys.
 
 ---
 
@@ -175,12 +176,37 @@ Province 1──N District 1──N Station 1──N Vehicle 1──N Ping
 
 ---
 
+### User (authentication)
+
+| Field | Type | Example | Notes |
+|---|---|---|---|
+| `id` | number | `1` | Primary key, auto-increment |
+| `username` | string | `"admin"` | Unique login name |
+| `email` | string | `"admin@taxico.lk"` | Unique email address |
+| `password` | string | `"$2b$10$..."` | bcrypt hash — never stored in plaintext |
+| `role` | enum | `"admin"` | One of: `admin`, `dispatcher`, `driver` |
+| `created_at` | string (ISO 8601) | `"2026-07-19T00:00:00Z"` | Server-generated timestamp |
+
+**Source:** `seed.json` → `users[]`.
+
+**Seed users:**
+
+| Username | Password | Role |
+|---|---|---|
+| `admin` | `admin123` | admin |
+| `dispatcher01` | `dispatcher123` | dispatcher |
+| `dispatcher02` | `dispatcher123` | dispatcher |
+| `driver01` | `driver123` | driver |
+| `driver02` | `driver123` | driver |
+
+---
+
 ## API Routes
 
 ### Conventions
 
 - **Base path:** `/api`
-- **Auth:** Every endpoint under `/api` requires `X-API-Key` header (exceptions: `/` and `/api` discovery)
+- **Auth:** Every endpoint under `/api` requires a valid JWT access token via `Authorization: Bearer <token>` header (exception: `/api/auth/login` is public). Role-based authorization is enforced per-route.
 - **Response envelope:**
 
   **Collection:**
@@ -213,100 +239,109 @@ Province 1──N District 1──N Station 1──N Vehicle 1──N Ping
   - `201` — Created (POST)
   - `204` — Deleted (DELETE, no body)
   - `400` — Validation error (missing/invalid fields)
-  - `401` — Missing or invalid API key
+  - `401` — Missing or invalid JWT token, or invalid credentials
+  - `403` — Forbidden: insufficient role permissions
   - `404` — Resource not found
   - `409` — Conflict (e.g., driver already on a trip)
   - `500` — Internal server error
 
 ### Full route table
 
-#### Discovery & health
+#### Authentication
 
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| `GET` | `/` | No | HTML welcome page |
-| `GET` | `/api` | No | JSON endpoint listing all available resource paths |
+| Method | Path | Auth | Roles | Description |
+|---|---|---|---|---|
+| `POST` | `/api/auth/login` | No | — | Exchange username + password for a JWT access token |
 
 ---
 
-#### Key management (admin)
+#### Discovery & health
 
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| `GET` | `/api/keys` | Yes | List all API keys |
-| `POST` | `/api/keys` | Yes | Create a new API key (body: `{ "name": "..." }`) |
-| `DELETE` | `/api/keys/:id` | Yes | Revoke (delete) an API key |
+| Method | Path | Auth | Roles | Description |
+|---|---|---|---|---|
+| `GET` | `/` | No | — | HTML welcome page |
+| `GET` | `/api` | No | — | JSON endpoint listing all available resource paths |
+
+---
+
+#### Key management
+
+| Method | Path | Auth | Roles | Description |
+|---|---|---|---|---|
+| `GET` | `/api/keys` | JWT | admin | List all API keys |
+| `POST` | `/api/keys` | JWT | admin | Create a new API key (body: `{ "name": "..." }`) |
+| `DELETE` | `/api/keys/:id` | JWT | admin | Revoke (delete) an API key |
 
 ---
 
 #### Provinces (read-only reference data)
 
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| `GET` | `/api/provinces` | Yes | List all provinces |
-| `GET` | `/api/provinces/:id` | Yes | Get single province by ID (404 if not found) |
-| `GET` | `/api/provinces/:id/districts` | Yes | List districts belonging to a province |
+| Method | Path | Auth | Roles | Description |
+|---|---|---|---|---|
+| `GET` | `/api/provinces` | JWT | all authenticated | List all provinces |
+| `GET` | `/api/provinces/:id` | JWT | all authenticated | Get single province by ID (404 if not found) |
+| `GET` | `/api/provinces/:id/districts` | JWT | all authenticated | List districts belonging to a province |
 
 ---
 
 #### Districts (read-only reference data)
 
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| `GET` | `/api/districts` | Yes | List districts. Query: `?province_id=` to filter |
-| `GET` | `/api/districts/:id` | Yes | Get single district (includes `province_name`) |
-| `GET` | `/api/districts/:id/stations` | Yes | List stations in a district |
+| Method | Path | Auth | Roles | Description |
+|---|---|---|---|---|
+| `GET` | `/api/districts` | JWT | all authenticated | List districts. Query: `?province_id=` to filter |
+| `GET` | `/api/districts/:id` | JWT | all authenticated | Get single district (includes `province_name`) |
+| `GET` | `/api/districts/:id/stations` | JWT | all authenticated | List stations in a district |
 
 ---
 
 #### Stations (read-only reference data)
 
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| `GET` | `/api/stations` | Yes | List stations. Query: `?district_id=` to filter |
-| `GET` | `/api/stations/:id` | Yes | Get single station (includes `district_name`) |
-| `GET` | `/api/stations/:id/vehicles` | Yes | List vehicles assigned to the station |
-| `GET` | `/api/stations/:id/drivers` | Yes | List drivers assigned to the station |
+| Method | Path | Auth | Roles | Description |
+|---|---|---|---|---|
+| `GET` | `/api/stations` | JWT | all authenticated | List stations. Query: `?district_id=` to filter |
+| `GET` | `/api/stations/:id` | JWT | all authenticated | Get single station (includes `district_name`) |
+| `GET` | `/api/stations/:id/vehicles` | JWT | all authenticated | List vehicles assigned to the station |
+| `GET` | `/api/stations/:id/drivers` | JWT | all authenticated | List drivers assigned to the station |
 
 ---
 
 #### Vehicles (CRUD + tracking sub-resources)
 
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| `GET` | `/api/vehicles` | Yes | List vehicles. Query: `?station_id=&status=` |
-| `GET` | `/api/vehicles/:id` | Yes | Get vehicle details — includes `station_name` and `current_location` (latest ping) |
-| `POST` | `/api/vehicles` | Yes | Register new vehicle. Body: `{ registration_number, device_id, station_id, status? }` |
-| `PUT` | `/api/vehicles/:id` | Yes | Update vehicle fields (partial update of allowed fields) |
-| `DELETE` | `/api/vehicles/:id` | Yes | Remove vehicle from fleet |
-| `GET` | `/api/vehicles/:id/pings` | Yes | Get ping history. Query: `?from=&to=&limit=` |
-| `GET` | `/api/vehicles/:id/current-location` | Yes | Get the single most recent ping for this vehicle |
-| `GET` | `/api/vehicles/:id/trips` | Yes | Get trip history for this vehicle (includes driver name) |
+| Method | Path | Auth | Roles | Description |
+|---|---|---|---|---|
+| `GET` | `/api/vehicles` | JWT | all authenticated | List vehicles. Query: `?station_id=&status=` |
+| `GET` | `/api/vehicles/:id` | JWT | all authenticated | Get vehicle details — includes `station_name` and `current_location` (latest ping) |
+| `POST` | `/api/vehicles` | JWT | admin | Register new vehicle. Body: `{ registration_number, device_id, station_id, status? }` |
+| `PUT` | `/api/vehicles/:id` | JWT | admin | Update vehicle fields (partial update of allowed fields) |
+| `DELETE` | `/api/vehicles/:id` | JWT | admin | Remove vehicle from fleet |
+| `GET` | `/api/vehicles/:id/pings` | JWT | all authenticated | Get ping history. Query: `?from=&to=&limit=` |
+| `GET` | `/api/vehicles/:id/current-location` | JWT | all authenticated | Get the single most recent ping for this vehicle |
+| `GET` | `/api/vehicles/:id/trips` | JWT | all authenticated | Get trip history for this vehicle (includes driver name) |
 
 ---
 
 #### Drivers (CRUD + trip history)
 
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| `GET` | `/api/drivers` | Yes | List drivers. Query: `?station_id=&status=` |
-| `GET` | `/api/drivers/:id` | Yes | Get single driver (includes `station_name`) |
-| `POST` | `/api/drivers` | Yes | Add new driver. Body: `{ name, license_number, phone?, station_id, status? }` |
-| `PUT` | `/api/drivers/:id` | Yes | Update driver fields |
-| `DELETE` | `/api/drivers/:id` | Yes | Remove driver |
-| `GET` | `/api/drivers/:id/trips` | Yes | Get trip history for this driver (includes vehicle registration) |
+| Method | Path | Auth | Roles | Description |
+|---|---|---|---|---|
+| `GET` | `/api/drivers` | JWT | all authenticated | List drivers. Query: `?station_id=&status=` |
+| `GET` | `/api/drivers/:id` | JWT | all authenticated | Get single driver (includes `station_name`) |
+| `POST` | `/api/drivers` | JWT | admin | Add new driver. Body: `{ name, license_number, phone?, station_id, status? }` |
+| `PUT` | `/api/drivers/:id` | JWT | admin | Update driver fields |
+| `DELETE` | `/api/drivers/:id` | JWT | admin | Remove driver |
+| `GET` | `/api/drivers/:id/trips` | JWT | all authenticated | Get trip history for this driver (includes vehicle registration) |
 
 ---
 
 #### Trips (lifecycle management)
 
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| `GET` | `/api/trips` | Yes | List trips. Query: `?vehicle_id=&driver_id=&status=&from=&to=` |
-| `GET` | `/api/trips/:id` | Yes | Get trip details with vehicle reg and driver name |
-| `POST` | `/api/trips` | Yes | Start a new trip. Body: `{ vehicle_id, driver_id, origin, destination, origin_lat?, origin_lng?, dest_lat?, dest_lng? }` |
-| `PATCH` | `/api/trips/:id/complete` | Yes | Mark trip as completed. Body: optional `{ dest_lat, dest_lng, destination, end_time }` |
-| `PATCH` | `/api/trips/:id/cancel` | Yes | Mark trip as cancelled |
+| Method | Path | Auth | Roles | Description |
+|---|---|---|---|---|
+| `GET` | `/api/trips` | JWT | admin, dispatcher | List trips. Query: `?vehicle_id=&driver_id=&status=&from=&to=` |
+| `GET` | `/api/trips/:id` | JWT | all authenticated | Get trip details with vehicle reg and driver name |
+| `POST` | `/api/trips` | JWT | admin, dispatcher | Start a new trip. Body: `{ vehicle_id, driver_id, origin, destination, origin_lat?, origin_lng?, dest_lat?, dest_lng? }` |
+| `PATCH` | `/api/trips/:id/complete` | JWT | admin, dispatcher | Mark trip as completed. Body: optional `{ dest_lat, dest_lng, destination, end_time }` |
+| `PATCH` | `/api/trips/:id/cancel` | JWT | admin, dispatcher | Mark trip as cancelled |
 
 **Side effects of POST /api/trips:**
 - Driver status → `on_trip`
@@ -320,18 +355,18 @@ Province 1──N District 1──N Station 1──N Vehicle 1──N Ping
 
 #### Pings / GPS (append + query)
 
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| `GET` | `/api/pings` | Yes | Query pings. Query: `?vehicle_id=&from=&to=&limit=` |
-| `POST` | `/api/pings` | Yes | Record a GPS ping. Body: `{ vehicle_id, latitude, longitude, timestamp? }` |
+| Method | Path | Auth | Roles | Description |
+|---|---|---|---|---|
+| `GET` | `/api/pings` | JWT | admin, dispatcher | Query pings. Query: `?vehicle_id=&from=&to=&limit=` |
+| `POST` | `/api/pings` | JWT | admin, driver | Record a GPS ping. Body: `{ vehicle_id, latitude, longitude, timestamp? }` |
 
 ---
 
 #### Dashboard (live map overview)
 
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| `GET` | `/api/tracking/dashboard` | Yes | Returns the latest ping for every active vehicle, plus current trip status and driver name |
+| Method | Path | Auth | Roles | Description |
+|---|---|---|---|---|
+| `GET` | `/api/tracking/dashboard` | JWT | all authenticated | Returns the latest ping for every active vehicle, plus current trip status and driver name |
 
 ---
 
@@ -569,7 +604,7 @@ GET /api/vehicles
 {
   "error": {
     "code": 401,
-    "message": "Missing X-API-Key header"
+    "message": "Missing Authorization header"
   }
 }
 ```
@@ -602,14 +637,18 @@ F:\webAPI-proj\WebaAPIDev-Test\
 ├── project.md              ← This file
 ├── server.js               ← Express app entry point
 ├── package.json
+├── .env                    ← Environment variables (MongoDB URI, JWT secret)
 ├── README.md
-├── seed.json               ← Seed data (provinces, districts, stations, vehicles, pings, drivers)
+├── seed.json               ← Seed data (provinces, districts, stations, vehicles, pings, drivers, users)
+├── importSeed.js           ← MongoDB Atlas seed importer
 ├── src/
 │   ├── data/
 │   │   └── store.js        ← In-memory data store (CRUD helpers, seed loader)
 │   ├── middleware/
-│   │   └── auth.js         ← X-API-Key header validation
+│   │   ├── authenticate.js ← JWT token verification
+│   │   └── authorize.js    ← Role-based access control
 │   └── routes/
+│       ├── auth.js         ← POST /api/auth/login (JWT token generation)
 │       ├── keys.js         ← API key management
 │       ├── provinces.js    ← Province endpoints
 │       ├── districts.js    ← District endpoints
@@ -623,12 +662,12 @@ F:\webAPI-proj\WebaAPIDev-Test\
 
 ---
 
-## Implementation Order (recommended)
+## Implementation Order
 
 1. **`src/data/store.js`** — In-memory data store loading seed.json with `list`, `getById`, `create`, `update`, `delete` generics, plus domain-specific helpers (`getVehicleWithLocation`, `getDashboard`)
-2. **`src/middleware/auth.js`** — API key check
+2. **`src/middleware/auth.js`** — API key check (original; later replaced by JWT)
 3. **Route files** (in order):
-   - `provinces.js`, `districts.js`, `stations.js` (read-only — quick to build and test)
+   - `provinces.js`, `districts.js`, `stations.js` (read-only)
    - `vehicles.js` (core CRUD + sub-resources)
    - `drivers.js` (CRUD)
    - `trips.js` (lifecycle with driver status side effects)
@@ -637,7 +676,18 @@ F:\webAPI-proj\WebaAPIDev-Test\
    - `keys.js` (admin key management)
 4. **`server.js`** — Wire all routes with auth middleware, add JSON body parsing and error handler
 5. **`seed.json`** — Add `drivers[]` array
-6. **Smoke test** every endpoint
+6. **JWT authentication phase:**
+   - Install `bcryptjs` and `jsonwebtoken` packages
+   - Add `JWT_SECRET` and `JWT_EXPIRES_IN` to `.env`
+   - Create `src/middleware/authenticate.js` — JWT token verification
+   - Create `src/middleware/authorize.js` — role-checking middleware factory
+   - Create `src/routes/auth.js` — `POST /api/auth/login` endpoint
+   - Add `users[]` to `seed.json` with pre-hashed passwords
+   - Update `src/data/store.js` — load users, add `findUserByUsername()`
+   - Update `server.js` — replace `auth` middleware with `authenticate`, add role guards
+   - Update `importSeed.js` — add `users` collection
+   - Update `project.md` — document JWT auth
+7. **Smoke test** every endpoint
 
 ---
 
@@ -656,4 +706,9 @@ F:\webAPI-proj\WebaAPIDev-Test\
 | Trip | `origin`, `destination` | Required |
 | Ping | `vehicle_id` | Required, must reference existing vehicle |
 | Ping | `latitude`, `longitude` | Required, must be numeric |
-| Auth | `X-API-Key` | Required on all `/api/*` routes; invalid key returns 401 |
+| Auth | `Authorization: Bearer <token>` | Required on all `/api/*` routes (except `/api/auth/login`); invalid/expired token returns 401 |
+| Auth | Role | `admin`, `dispatcher`, `driver` — checked per-route; insufficient role returns 403 |
+| User | `username` | Required on create, unique |
+| User | `email` | Required on create, unique |
+| User | `password` | Required on create, stored as bcrypt hash |
+| User | `role` | Required on create, one of: `admin`, `dispatcher`, `driver` |

@@ -1,5 +1,6 @@
 const { Router } = require('express');
 const store = require('../data/store');
+const authorize = require('../middleware/authorize');
 
 const router = Router();
 
@@ -23,7 +24,7 @@ router.get('/:id', (req, res) => {
   res.json({ data: vehicle });
 });
 
-router.post('/', (req, res) => {
+router.post('/', authorize('admin'), (req, res) => {
   const { registration_number, device_id, station_id, status } = req.body;
   if (!registration_number || !device_id || !station_id) {
     return res.status(400).json({
@@ -43,7 +44,7 @@ router.post('/', (req, res) => {
   res.status(201).json({ data: { ...vehicle, station_name: station.name } });
 });
 
-router.put('/:id', (req, res) => {
+router.put('/:id', authorize('admin'), (req, res) => {
   const allowed = ['registration_number', 'device_id', 'station_id', 'status'];
   const updates = {};
   for (const field of allowed) {
@@ -57,7 +58,7 @@ router.put('/:id', (req, res) => {
   res.json({ data: { ...vehicle, station_name: station ? station.name : null } });
 });
 
-router.delete('/:id', (req, res) => {
+router.delete('/:id', authorize('admin'), (req, res) => {
   const deleted = store.delete('vehicles', req.params.id);
   if (!deleted) {
     return res.status(404).json({ error: { code: 404, message: 'Vehicle not found' } });

@@ -1,5 +1,6 @@
 const { Router } = require('express');
 const store = require('../data/store');
+const authorize = require('../middleware/authorize');
 
 const router = Router();
 

@@ -1,5 +1,8 @@
+require('dotenv').config();
+
 const express = require('express');
-const auth = require('./src/middleware/auth');
+const authenticate = require('./src/middleware/authenticate');
+const authorize = require('./src/middleware/authorize');
 const keysRouter = require('./src/routes/keys');
 const provincesRouter = require('./src/routes/provinces');
 const districtsRouter = require('./src/routes/districts');
@@ -11,7 +14,7 @@ const pingsRouter = require('./src/routes/pings');
 const trackingRouter = require('./src/routes/tracking');
 
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
 
 app.use(express.json());
 
@@ -24,6 +27,7 @@ app.get('/api', (req, res) => {
     name: 'TaxiCo Vehicle Tracking API',
     version: '1.0.0',
     endpoints: {
+      auth: '/api/auth',
       keys: '/api/keys',
       provinces: '/api/provinces',
       districts: '/api/districts',
@@ -37,15 +41,16 @@ app.get('/api', (req, res) => {
   });
 });
 
-app.use('/api/keys', auth, keysRouter);
-app.use('/api/provinces', auth, provincesRouter);
-app.use('/api/districts', auth, districtsRouter);
-app.use('/api/stations', auth, stationsRouter);
-app.use('/api/vehicles', auth, vehiclesRouter);
-app.use('/api/drivers', auth, driversRouter);
-app.use('/api/trips', auth, tripsRouter);
-app.use('/api/pings', auth, pingsRouter);
-app.use('/api/tracking', auth, trackingRouter);
+app.use('/api/auth', require('./src/routes/auth'));
+app.use('/api/keys', authenticate, authorize('admin'), keysRouter);
+app.use('/api/provinces', authenticate, provincesRouter);
+app.use('/api/districts', authenticate, districtsRouter);
+app.use('/api/stations', authenticate, stationsRouter);
+app.use('/api/vehicles', authenticate, vehiclesRouter);
+app.use('/api/drivers', authenticate, driversRouter);
+app.use('/api/trips', authenticate, tripsRouter);
+app.use('/api/pings', authenticate, pingsRouter);
+app.use('/api/tracking', authenticate, trackingRouter);
 
 app.use((err, req, res, next) => {
   console.error(err.stack);

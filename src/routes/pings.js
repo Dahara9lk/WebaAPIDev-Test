@@ -1,5 +1,6 @@
 const { Router } = require('express');
 const store = require('../data/store');
+const authorize = require('../middleware/authorize');
 
 const router = Router();
 
@@ -25,7 +26,7 @@ router.get('/', (req, res) => {
   res.json({ data: pings, count: pings.length });
 });
 
-router.post('/', (req, res) => {
+router.post('/', authorize('admin', 'driver'), (req, res) => {
   const { vehicle_id, latitude, longitude, timestamp } = req.body;
   if (vehicle_id === undefined || latitude === undefined || longitude === undefined) {
     return res.status(400).json({
